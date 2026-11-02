@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="initial-scale=1,user-scalable=no,width=device-width">
+<meta name="mobile-web-app-capable" content="yes">
+<title>B23 Field Photo Archive — Custom Viewer v1</title>
+<link rel="stylesheet" href="./resources/ol.css">
+<style>
+  :root{ --hdr-h:54px; --bd:#d9d9d9; --accent:#b3541e; --accent2:#ff8c00; }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;font-family:"Microsoft JhengHei","PingFang TC",Arial,sans-serif;background:#fff;color:#222}
+  /* ---------- header ---------- */
+  #hdr{height:var(--hdr-h);display:flex;align-items:center;gap:12px;padding:0 12px;
+    background:#263238;color:#fff;overflow-x:auto;white-space:nowrap}
+  #hdr .t{font-weight:700;font-size:15px;flex:0 0 auto}
+  #hdr label.hist{display:flex;align-items:center;gap:6px;cursor:pointer;background:#37474f;
+    padding:4px 10px;border-radius:14px;font-size:13px;flex:0 0 auto}
+  #hdr label.hist input{accent-color:var(--accent2)}
+  #hdr .cnt{font-size:13px;color:#ffe0b2;flex:0 0 auto}
+  #hdr button{border:1px solid #90a4ae;background:#455a64;color:#fff;border-radius:4px;
+    padding:4px 10px;font-size:13px;cursor:pointer;flex:0 0 auto}
+  #hdr button:hover{background:#546e7a}
+  /* ---------- layout ---------- */
+  #main{display:grid;grid-template-columns:290px minmax(0,1fr) 400px;
+    grid-template-areas:"f m d";height:calc(100vh - var(--hdr-h))}
+  #filters{grid-area:f;border-right:1px solid var(--bd);overflow-y:auto;padding:10px;background:#fafafa}
+  #map{grid-area:m;position:relative}
+  #map .ol-control>*{background-color:#f8f8f8!important;color:#444!important;border-radius:0}
+  #detail{grid-area:d;border-left:1px solid var(--bd);overflow-y:auto;padding:12px;background:#fff}
+  /* ---------- filters ---------- */
+  #globalBtns{display:flex;gap:8px;margin-bottom:10px}
+  #globalBtns button{flex:1;padding:6px 0;border:1px solid var(--accent);background:#fff;color:var(--accent);
+    border-radius:4px;cursor:pointer;font-size:13px}
+  #globalBtns button:hover{background:var(--accent);color:#fff}
+  #countLine{font-size:13px;margin-bottom:10px;padding:8px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2}
+  #countLine b{color:var(--accent)}
+  .fgroup{margin-bottom:14px;border:1px solid var(--bd);border-radius:6px;background:#fff}
+  .fgroup h3{margin:0;padding:8px 10px;font-size:13px;background:#eceff1;border-radius:6px 6px 0 0;
+    display:flex;justify-content:space-between;align-items:center}
+  .fgroup h3 a{color:var(--accent);cursor:pointer;margin-left:8px;text-decoration:underline;font-size:11px;font-weight:400}
+  .fgroup .list{max-height:180px;overflow-y:auto;padding:4px 10px}
+  .fgroup .list label{display:flex;gap:6px;align-items:flex-start;font-size:12.5px;padding:3px 0;cursor:pointer;line-height:1.35}
+  .fgroup .list input{margin-top:2px;accent-color:var(--accent)}
+  .fgroup .list .n{color:#888;font-size:11px}
+  /* ---------- detail ---------- */
+  #detail h2{font-size:15px;margin:0 0 10px;color:var(--accent);border-bottom:2px solid var(--accent);padding-bottom:6px}
+  #detail img.photo{width:100%;max-height:42vh;object-fit:contain;background:#111;border-radius:4px;display:block}
+  #detail .phmissing{padding:24px 10px;text-align:center;color:#999;background:#111;border-radius:4px;font-size:12px}
+  .desc{margin:10px 0 4px;padding:10px;background:#f6f6f6;border-left:4px solid var(--accent);
+    font-size:13px;line-height:1.5;word-break:break-word;white-space:pre-wrap}
+  .desc .lbl{display:block;font-size:11px;color:#888;margin-bottom:4px}
+  #detail table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  #detail td{border-top:1px solid #eee;padding:6px 4px;vertical-align:top}
+  #detail td.k{width:38%;color:#666;font-weight:600;background:#fafafa}
+  #detail td.v{word-break:break-word}
+  #detail .placeholder{color:#999;text-align:center;margin-top:38vh;transform:translateY(-50%);font-size:14px}
+  .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px}
+  .thumbs div{cursor:pointer;border:1px solid var(--bd);border-radius:4px;padding:4px;text-align:center;background:#fff}
+  .thumbs div:hover{border-color:var(--accent2);background:#fff8f0}
+  .thumbs img{width:100%;height:80px;object-fit:cover;background:#111;display:block;border-radius:2px}
+  .thumbs span{display:block;font-size:11px;margin-top:3px;color:#555}
+  .flash{animation:fl .9s ease 1}
+  @keyframes fl{0%{background:#ffe0b2}100%{background:#fff}}
+  #dbg{position:absolute;left:6px;bottom:6px;z-index:5;background:rgba(0,0,0,.55);color:#fff;
+    font:11px monospace;padding:3px 6px;border-radius:3px;display:none}
+  /* ---------- responsive ---------- */
+  @media (max-width:1280px){#main{grid-template-columns:240px minmax(0,1fr) 330px}}
+  @media (max-width:980px){
+    #main{grid-template-columns:1fr;grid-template-rows:52vh auto auto;grid-template-areas:"m" "d" "f"}
+    #detail{border-left:none;border-top:1px solid var(--bd)}
+    #filters{border-right:none;border-top:1px solid var(--bd)}
+  }
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <span class="t">B23 Interactive Photo Archive</span>
+  <label class="hist"><input type="checkbox" id="histToggle" checked>
+    歷史航拍 Historic aerials（Ma Wan / Sha Lo Wan）</label>
+  <span class="cnt" id="hdrCount"></span>
+  <button id="btnAll">Select all</button>
+  <button id="btnClear">Clear</button>
+</div>
+
+<div id="main">
+  <aside id="filters">
+    <div id="countLine"></div>
+    <div id="globalBtns">
+      <button id="btnAll2">Select all</button>
+      <button id="btnClear2">Clear</button>
+    </div>
+    <div id="fgroups"></div>
+  </aside>
+
+  <div id="map"><div id="dbg"></div></div>
+
+  <aside id="detail">
+    <div class="placeholder" id="detailPlaceholder">
+      點擊地圖上的照片標記以顯示照片與 metadata。<br>Click a photo marker on the map.
+    </div>
+    <div id="detailBody" style="display:none"></div>
+  </aside>
+</div>
+
+<script src="./resources/ol.js"></script>
+<script src="layers/FieldPhotoRecords_5.js"></script>
+<script src="styles/FieldPhotoRecords_5_style.js"></script>
+<script src="./layers/layers.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var DBG = document.getElementById('dbg');
+  function dbg(msg){ DBG.style.display='block'; DBG.textContent = msg; }
+
+  /* ===== 1. data：直接取自 FieldPhotoRecords_5.js ===== */
+  var BASE_EXTENT = [12675477.098967, 2538889.593800, 12690370.961455, 2547565.001179]; // 原 index.html bounds
+
+  var allFeats = new ol.format.GeoJSON().readFeatures(json_FieldPhotoRecords_5,
+      {dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857'});
+
+  // 無獨立 subject 欄位 → 由 place_name 派生（"馬灣涌村－寶安橋（…）" -> "寶安橋"）
+  function subjectOf(place){
+    var s = place || '';
+    if (s.indexOf('－') > -1) s = s.split('－')[1];
+    s = s.replace(/（[^）]*）/g, '').trim();
+    return s || (place || '未知');
+  }
+  var records = allFeats.map(function(f){
+    var p = f.getProperties();
+    return { feat:f, id:p.file_name, props:p, subject:subjectOf(p.place_name) };
+  });
+  var byId = {};
+  records.forEach(function(r){ byId[r.id] = r; });
+
+  function imgFile(r){
+    return String(r.props.photo_path || '').replace(/[\\\/:]/g, '_').trim();
+  }
+
+  /* ===== 2. photo layer + clustering ===== */
+  var photoSource = new ol.source.Vector();
+  var clusterSource = new ol.source.Cluster({ distance: 30, source: photoSource });
+
+  var selStyle = new ol.style.Style({
+    image: new ol.style.Circle({
+      radius: 14,
+      fill: new ol.style.Fill({color: 'rgba(255,140,0,0.95)'}),
+      stroke: new ol.style.Stroke({color: '#ffffff', width: 3})
+    })
+  });
+  function photoStyleFn(feature){
+    var cf = feature.get('features');
+    if (cf && cf.length === 1 && selectedId && cf[0].get('file_name') === selectedId) return selStyle;
+    return style_FieldPhotoRecords_5(feature);
+  }
+  var photoLayer = new ol.layer.Vector({
+    declutter: false, source: clusterSource, style: photoStyleFn, title: 'Field Photo Records'
+  });
+
+  /* ===== 3. map：ModernBaseMap_0 + 原 bounds + 歷史航拍可切換 ===== */
+  var histLayers = [lyr_ShaLoWan2_1, lyr_ShaLoWan_2, lyr_MaWan_3, lyr_MaWan2_4];
+  var map = new ol.Map({
+    target: 'map',
+    layers: [lyr_ModernBaseMap_0].concat(histLayers).concat([photoLayer]),
+    view: new ol.View({constrainResolution: false, maxZoom: 28, minZoom: 1})
+  });
+  // OL 10：fit() 第二個參數必須是 options 物件，傳 size 陣列會被忽略（原 index.html 即因此開得過遠）
+  function fitBase(){
+    var sz = map.getSize() || [900, 700];
+    map.getView().fit(BASE_EXTENT, {size: sz, padding: [10, 10, 10, 10]});
+  }
+  fitBase();
+  window.addEventListener('resize', function(){ map.updateSize(); fitBase(); });
+
+  document.getElementById('histToggle').addEventListener('change', function(){
+    histLayers.forEach(function(l){ l.setVisible(this.checked); }, this);
+  });
+
+  /* ===== 4. filters ===== */
+  var FG = [
+    {key:'place_name', title:'place_name 地點'},
+    {key:'subject',    title:'photo_subject 主題'},
+    {key:'precision',  title:'location_precision 定位精度'}
+  ];
+  function valOf(r, key){
+    if (key === 'place_name') return r.props.place_name;
+    if (key === 'subject')    return r.subject;
+    return r.props.location_precision;
+  }
+  function uniq(key){
+    var m = {};
+    records.forEach(function(r){ var v = valOf(r, key); m[v] = (m[v] || 0) + 1; });
+    return Object.keys(m).sort(function(a,b){ return a.localeCompare(b, 'zh-Hant'); })
+             .map(function(v){ return {v:v, n:m[v]}; });
+  }
+  var sel = {place_name:new Set(), subject:new Set(), precision:new Set()};
+  var html = '';
+  FG.forEach(function(g){
+    var vals = uniq(g.key);
+    vals.forEach(function(x){ sel[g.key].add(x.v); });
+    html += '<div class="fgroup"><h3><span>'+g.title+'</span><span>'+
+      '<a href="javascript:void(0)" data-g="'+g.key+'" data-act="all">全選</a>'+
+      '<a href="javascript:void(0)" data-g="'+g.key+'" data-act="none">全清</a></span></h3><div class="list">';
+    vals.forEach(function(x){
+      html += '<label><input type="checkbox" data-g="'+g.key+'" value="'+String(x.v).replace(/"/g,'&quot;')+
+              '" checked><span>'+x.v+' <span class="n">('+x.n+')</span></span></label>';
+    });
+    html += '</div></div>';
+  });
+  document.getElementById('fgroups').innerHTML = html;
+
+  function currentPass(){
+    return records.filter(function(r){
+      return sel.place_name.has(r.props.place_name) &&
+             sel.subject.has(r.subject) &&
+             sel.precision.has(r.props.location_precision);
+    });
+  }
+  function refreshCount(pass){
+    var mapped = pass.filter(function(r){ return !!r.feat.getGeometry(); });
+    document.getElementById('countLine').innerHTML =
+      '目前顯示記錄：<b>'+pass.length+'</b> / '+records.length+' 張（地圖標記 <b>'+mapped.length+
+      '</b>，未定位 '+(pass.length - mapped.length)+' 張）';
+    document.getElementById('hdrCount').textContent = pass.length+' / '+records.length;
+  }
+  function applyFilters(keepSelection){
+    var pass = currentPass();
+    var mapped = pass.filter(function(r){ return !!r.feat.getGeometry(); });
+    photoSource.clear();
+    photoSource.addFeatures(mapped.map(function(r){ return r.feat; }));
+    if (!keepSelection){ selectedId = null; }
+    refreshCount(pass);
+    if (selectedId && mapped.filter(function(r){ return r.id === selectedId; }).length === 0){
+      selectedId = null; showPlaceholder();
+    }
+    photoLayer.changed();
+  }
+  function checkAll(g, on){
+    sel[g] = on ? new Set(uniq(g).map(function(x){ return x.v; })) : new Set();
+    var boxes = document.querySelectorAll('#fgroups input[type=checkbox][data-g="'+g+'"]');
+    for (var i = 0; i < boxes.length; i++) boxes[i].checked = !!on;
+  }
+  document.getElementById('fgroups').addEventListener('change', function(e){
+    var t = e.target;
+    if (t && t.matches && t.matches('input[type=checkbox]')){
+      var g = t.getAttribute('data-g');
+      if (t.checked) sel[g].add(t.value); else sel[g].delete(t.value);
+      applyFilters(true);
+    }
+  });
+  document.getElementById('fgroups').addEventListener('click', function(e){
+    var t = e.target;
+    if (t && t.matches && t.matches('a[data-act]')){
+      checkAll(t.getAttribute('data-g'), t.getAttribute('data-act') === 'all');
+      applyFilters(true);
+    }
+  });
+  function globalSet(on){
+    FG.forEach(function(g){ checkAll(g.key, !!on); });
+    applyFilters(true);
+  }
+  document.getElementById('btnAll').addEventListener('click', function(){ globalSet(true); });
+  document.getElementById('btnAll2').addEventListener('click', function(){ globalSet(true); });
+  document.getElementById('btnClear').addEventListener('click', function(){ globalSet(false); });
+  document.getElementById('btnClear2').addEventListener('click', function(){ globalSet(false); });
+
+  /* ===== 5. detail panel ===== */
+  var bodyEl = document.getElementById('detailBody');
+  var phEl   = document.getElementById('detailPlaceholder');
+  function esc(s){ return (s === null || s === undefined) ? '' :
+    String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function showPlaceholder(){ phEl.style.display='block'; bodyEl.style.display='none'; }
+  function showBody(){ phEl.style.display='none'; bodyEl.style.display='block'; }
+  function flash(){ bodyEl.classList.remove('flash'); void bodyEl.offsetWidth; bodyEl.classList.add('flash'); }
+
+  var ROWS = [
+    ['Photo ID 檔案編號',       function(r){ return r.props.file_name; }],
+    ['Place 地點',              function(r){ return r.props.place_name; }],
+    ['Date 拍攝日期',           function(r){ return r.props.shooting_date; }],
+    ['Subject 主題',            function(r){ return r.subject; }],
+    ['Direction 方位',          function(r){ return r.props.direction; }],
+    ['Location Precision 精度', function(r){ return r.props.location_precision; }],
+    ['Location Note 定位說明',  function(r){
+        return r.feat.getGeometry()
+          ? '已定位 X '+r.props.longitude+' / Y '+r.props.latitude+'（EPSG:4326）'
+          : '無座標 — unmapped，未顯示於地圖（保留於資料庫）'; }]
+  ];
+
+  // 單張照片：照片 + Description(source) + metadata
+  function showPhoto(r){
+    selectedId = r.id; photoLayer.changed(); showBody();
+    var rows = '';
+    ROWS.forEach(function(fld){
+      var v = fld[1](r);
+      rows += '<tr><td class="k">'+esc(fld[0])+'</td><td class="v">'+
+              (v === null || v === undefined || v === '' ? '—' : esc(v))+'</td></tr>';
+    });
+    var desc = (r.props.source === undefined || r.props.source === null || r.props.source === '')
+      ? '—' : esc(r.props.source);
+    bodyEl.innerHTML =
+      '<h2>'+esc(r.props.file_name)+'</h2>'+
+      '<img class="photo" src="images/'+imgFile(r)+'" alt="'+esc(r.props.file_name)+'" '+
+           'onerror="this.onerror=null;this.style.display=\'none\';var d=document.getElementById(\'phMiss\');if(d)d.style.display=\'block\';">'+
+      '<div class="phmissing" id="phMiss" style="display:none">找不到圖片：images/'+esc(imgFile(r))+'</div>'+
+      '<div class="desc"><span class="lbl">Description（source）</span>'+desc+'</div>'+
+      '<table>'+rows+'</table>';
+    flash();
+  }
+
+  // 多張（cluster）：縮略圖清單，點一下即開單張
+  var clusterListIds = [];
+  function showClusterList(list){
+    selectedId = null; photoLayer.changed(); showBody();
+    clusterListIds = list.map(function(r){ return r.id; });
+    var cells = list.map(function(r){
+      return '<div data-photo="'+esc(r.id)+'"><img src="images/'+imgFile(r)+'" alt="'+esc(r.id)+'">'+
+             '<span>'+esc(r.id)+'<br>'+esc(r.props.place_name)+'</span></div>';
+    }).join('');
+    bodyEl.innerHTML =
+      '<h2>此地點有 '+list.length+' 張照片</h2>'+
+      '<div style="font-size:12px;color:#666;margin-bottom:6px">點擊縮圖查看照片與完整 metadata；'+
+      '或<button id="btnZoomCluster" style="margin-left:4px;font-size:12px;padding:3px 8px;border:1px solid '+
+      '#b3541e;background:#fff;color:#b3541e;border-radius:4px;cursor:pointer">放大至此組照片</button>再逐張點。</div>'+
+      '<div class="thumbs">'+cells+'</div>';
+    var bz = document.getElementById('btnZoomCluster');
+    if (bz) bz.addEventListener('click', function(){
+      var ext = ol.extent.createEmpty();
+      list.forEach(function(r){
+        if (r.feat.getGeometry()) ol.extent.extend(ext, r.feat.getGeometry().getExtent());
+      });
+      map.getView().fit(ext, {size: map.getSize(), padding: [60, 60, 60, 60], maxZoom: 20});
+    });
+    flash();
+  }
+  bodyEl.addEventListener('click', function(e){
+    var el = e.target;
+    while (el && el !== bodyEl && !(el.getAttribute && el.getAttribute('data-photo'))) el = el.parentNode;
+    if (el && el !== bodyEl){
+      var r = byId[el.getAttribute('data-photo')];
+      if (r) showPhoto(r);
+    }
+  });
+
+  /* ===== 6. click on map：多重回退，確保一定取得 cluster ===== */
+  var selectedId = null;
+
+  // 回退：不依賴 cluster source 內部陣列（OL10 未渲染時為空），
+  // 直接以底層 photoSource 取點擊點附近的照片（Node 實測可正確取到整組）
+  function groupAtPixel(coord, tolerancePx){
+    var res = map.getView().getResolution() || 1;
+    var tol = tolerancePx * res;
+    var near = [];
+    photoSource.getFeatures().forEach(function(f){
+      var g = f.getGeometry(); if (!g) return;
+      var c = g.getCoordinates();
+      if (Math.sqrt((c[0]-coord[0])*(c[0]-coord[0]) + (c[1]-coord[1])*(c[1]-coord[1])) < tol) near.push(f);
+    });
+    return near;
+  }
+  function handleCluster(cf){
+    if (!cf || cf.length === 0){ showPlaceholder(); return; }
+    var list = cf.map(function(f){ return byId[f.get('file_name')]; }).filter(function(r){ return !!r; });
+    if (list.length === 0){ showPlaceholder(); return; }
+    if (list.length === 1){ showPhoto(list[0]); }
+    else { showClusterList(list); }
+  }
+  map.on('click', function(evt){
+    var pix = evt.pixel || (evt.originalEvent && map.getEventPixel(evt.originalEvent));
+    if (!pix){ dbg('no pixel'); return; }
+    var hit = null;
+    // 路徑 1：OL 的 hit detection
+    map.forEachFeatureAtPixel(pix, function(f, layer){
+      var cf = f.get('features');
+      if (cf && cf.length){ hit = cf; return true; }
+      return false;
+    }, {hitTolerance: 10, layerFilter: function(l){ return l === photoLayer; }});
+    // 路徑 2：座標距離（完全不依賴 hit detection）
+    if (!hit){
+      var near = groupAtPixel(map.getCoordinateFromPixel(pix), 26);
+      if (near.length) hit = near;
+    }
+    if (!hit){ selectedId = null; photoLayer.changed(); showPlaceholder(); dbg('no photo here'); return; }
+    dbg('photos here = ' + hit.length);
+    handleCluster(hit);
+  });
+  map.on('pointermove', function(e){
+    var hit = false;
+    if (e.pixel){
+      hit = map.hasFeatureAtPixel(e.pixel, {layerFilter: function(l){ return l === photoLayer; }});
+    }
+    map.getTargetElement().style.cursor = hit ? 'pointer' : '';
+  });
+
+  applyFilters(false);
+})();
+</script>
+</body>
+</html>
